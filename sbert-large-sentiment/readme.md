@@ -1,4 +1,4 @@
-[sbert-large-sentiment](https://huggingface.co/d010r3s/sbert-large-sentiment)
+hf: [sbert-large-sentiment](https://huggingface.co/d010r3s/sbert-large-sentiment)
 
 fine-tuned [sbert_large_nlu_ru](https://huggingface.co/ai-forever/sbert_large_nlu_ru)
 
