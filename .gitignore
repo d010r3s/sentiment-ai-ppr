@@ -1,0 +1,14 @@
+*.db
+*.csv
+*.ipynb_checkpoints/
+__pycache__/
+.python-version
+*.pt
+*.ckpt
+.env
+.env.*
+.venv/
+.cache/
+.vscode/
+.DS_Store
+".idea/" 
