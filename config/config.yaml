@@ -1,0 +1,10 @@
+database:
+  path: data/feedback.db
+models:
+  embedder: sentence-transformers/all-MiniLM-L6-v2
+  recommender: IlyaGusev/saiga_mistral_7b_lora
+rag:
+  top_k: 5
+  similarity_threshold: 0.8
+processing:
+  include_neutral: false
