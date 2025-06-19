@@ -39,13 +39,14 @@ def remove_stopwords(text: str, stop_words: Set[str]) -> str:
     return " ".join(filtered_words)
 
 
-def preprocess_data(input_path: str = "data/all_reviews.csv", product_description: Optional[str] = None,
+def preprocess_data(input_data: Union[str, pd.DataFrame] = "data/all_reviews.csv",
+                    product_description: Optional[str] = None,
                     relevance_threshold: Optional[float] = None) -> pd.DataFrame:
     """
     Preprocess reviews: remove duplicates (from CSV and database), optionally filter relevant feedback,
     optionally remove stopwords, generate embeddings, and return a DataFrame.
     Args:
-        input_path: Path to input CSV (from scraper.py).
+        input_data: Path to input CSV or DataFrame (from scraper or attachment).
         product_description: Product description for relevance check.
         relevance_threshold: Cosine similarity threshold.
     Returns:
@@ -56,9 +57,9 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
         use_fallback = config["processing"]["use_fallback_data"]
         use_relevance_filter = config["processing"]["use_relevance_filter"]
         remove_stopwords_flag = config["processing"]["remove_stopwords"]
-        stopwords_language = config["processing"]["stopwords_language"]
+        stopwords_language = config["processing"].get("stopwords_language", "russian")
         db_path = config["database"]["path"]
-        default_brand = config["processing"]["default_brand"]
+        default_brand = config["processing"].get("default_brand", "PPR")
 
         if product_description is None:
             product_description = config["processing"]["product_description"]
@@ -86,38 +87,43 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
             except sqlite3.OperationalError:
                 print("Database table 'feedback' not found. No existing comments to check for duplicates.")
 
-        # Load input CSV with specific columns and encoding
-        try:
-            df = pd.read_csv(input_path, sep=';', encoding="utf-8", usecols=['text', 'sentiment'])
-        except (UnicodeDecodeError, FileNotFoundError, ValueError) as e:
+        # Load input data
+        if isinstance(input_data, pd.DataFrame):
+            df = input_data.copy()
+            if not {'text', 'sentiment'}.issubset(df.columns):
+                raise ValueError("DataFrame must contain 'text' and 'sentiment' columns")
+        else:
             try:
-                df = pd.read_csv(input_path, sep=';', encoding="utf-8-sig", usecols=['text', 'sentiment'])
-            except (UnicodeDecodeError, FileNotFoundError, ValueError):
+                df = pd.read_csv(input_data, sep=';', encoding="utf-8", usecols=['text', 'sentiment'])
+            except (UnicodeDecodeError, FileNotFoundError, ValueError) as e:
                 try:
-                    df = pd.read_csv(input_path, sep=';', encoding="cp1252", usecols=['text', 'sentiment'])
-                except FileNotFoundError:
-                    if not use_fallback:
-                        raise FileNotFoundError(
-                            f"{input_path} not found. Set 'use_fallback_data: true' in config.yaml to use sample data.")
-                    print(f"Error: {input_path} not found. Using sample data.")
-                    df = pd.DataFrame([
-                        {"text": "Долго возвращают средства", "sentiment": "negative"},
-                        {"text": "Приложение постоянно крашится", "sentiment": "negative"},
-                        {"text": "Приложение крашится", "sentiment": "negative"},
-                        {"text": "Поддержка работает окей", "sentiment": "neutral"},
-                        {"text": "Не связано с продуктом", "sentiment": "negative"}
-                    ])
-                except ValueError as ve:
-                    raise ValueError(f"CSV must contain 'text' and 'sentiment' columns: {str(ve)}")
+                    df = pd.read_csv(input_data, sep=';', encoding="utf-8-sig", usecols=['text', 'sentiment'])
+                except (UnicodeDecodeError, FileNotFoundError, ValueError):
+                    try:
+                        df = pd.read_csv(input_data, sep=';', encoding="cp1252", usecols=['text', 'sentiment'])
+                    except FileNotFoundError:
+                        if not use_fallback:
+                            raise FileNotFoundError(
+                                f"{input_data} not found. Set 'use_fallback_data: true' in config.yaml to use sample data.")
+                        print(f"Error: {input_data} not found. Using sample data.")
+                        df = pd.DataFrame([
+                            {"text": "Долго возвращают средства", "sentiment": "negative"},
+                            {"text": "Приложение постоянно крашится", "sentiment": "negative"},
+                            {"text": "Приложение крашится", "sentiment": "negative"},
+                            {"text": "Поддержка работает окей", "sentiment": "neutral"},
+                            {"text": "Не связано с продуктом", "sentiment": "negative"}
+                        ])
+                    except ValueError as ve:
+                        raise ValueError(f"CSV must contain 'text' and 'sentiment' columns: {str(ve)}")
 
         # Generate comment IDs and rename columns for database
         df['comment_id'] = df['text'].apply(lambda x: hashlib.sha256(x.encode('utf-8')).hexdigest())
         df = df.rename(columns={"text": "comment", "sentiment": "tone"})
 
-        # Remove duplicates within the CSV
+        # Remove duplicates within the data
         csv_duplicates = df.duplicated(subset=['comment_id'], keep='first')
         if csv_duplicates.sum() > 0:
-            print(f"Removed {csv_duplicates.sum()} duplicate comments within the CSV.")
+            print(f"Removed {csv_duplicates.sum()} duplicate comments within the data.")
             df = df[~csv_duplicates].copy()
 
         # Remove comments that already exist in the database
