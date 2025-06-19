@@ -2,13 +2,11 @@ import pandas as pd
 import hashlib
 import sqlite3
 import pickle
-from typing import Optional, Set
+from typing import Optional, Set, Union
 from sklearn.metrics.pairwise import cosine_similarity
 from src.models.embedder import Embedder
 from src.utils.config import load_config
-from src.data.database import init_db
 import nltk
-from nltk.corpus import stopwords
 
 
 def get_feedback_relevance(comment: str, embedder: Embedder, product_emb: list, threshold: float = 0.5) -> bool:
@@ -27,20 +25,15 @@ def get_feedback_relevance(comment: str, embedder: Embedder, product_emb: list, 
     return similarity >= threshold
 
 
-def remove_stopwords(text: str, language: str = "russian") -> str:
+def remove_stopwords(text: str, stop_words: Set[str]) -> str:
     """
     Remove stopwords from text (optional).
     Args:
         text: Input text.
-        language: Language for stopwords (e.g., 'russian', 'english').
+        stop_words: Set of stopwords to remove (not mutated).
     Returns:
         Text without stopwords.
     """
-    try:
-        nltk.data.find('corpora/stopwords')
-    except LookupError:
-        nltk.download('stopwords')
-    stop_words = set(stopwords.words(language))
     words = text.split()
     filtered_words = [word for word in words if word.lower() not in stop_words]
     return " ".join(filtered_words)
@@ -50,7 +43,7 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
                     relevance_threshold: Optional[float] = None) -> pd.DataFrame:
     """
     Preprocess reviews: remove duplicates (from CSV and database), optionally filter relevant feedback,
-    optionally remove stopwords, generate embeddings, and insert directly into the database.
+    optionally remove stopwords, generate embeddings, and return a DataFrame.
     Args:
         input_path: Path to input CSV (from scraper.py).
         product_description: Product description for relevance check.
@@ -65,7 +58,7 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
         remove_stopwords_flag = config["processing"]["remove_stopwords"]
         stopwords_language = config["processing"]["stopwords_language"]
         db_path = config["database"]["path"]
-        default_brand = config["processing"]["default_brand"]  # Default brand from config
+        default_brand = config["processing"]["default_brand"]
 
         if product_description is None:
             product_description = config["processing"]["product_description"]
@@ -74,8 +67,13 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
 
         embedder = Embedder()
 
-        # Initialize database
-        init_db(db_path)
+        # Check and download NLTK stopwords once
+        if remove_stopwords_flag:
+            try:
+                nltk.data.find('corpora/stopwords')
+            except LookupError:
+                nltk.download('stopwords')
+        stop_words = set(nltk.corpus.stopwords.words(stopwords_language)) if remove_stopwords_flag else set()
 
         # Load existing comment IDs from the database
         existing_comment_ids: Set[str] = set()
@@ -88,23 +86,29 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
             except sqlite3.OperationalError:
                 print("Database table 'feedback' not found. No existing comments to check for duplicates.")
 
-        # Load input CSV, validate 'text' and 'sentiment' columns, or use fallback
+        # Load input CSV with specific columns and encoding
         try:
-            df = pd.read_csv(input_path, sep=';', encoding="cp1252")
-            if not {'text', 'sentiment'}.issubset(df.columns):
-                raise ValueError("CSV must contain 'text' and 'sentiment' columns")
-        except FileNotFoundError:
-            if not use_fallback:
-                raise FileNotFoundError(
-                    f"{input_path} not found. Set 'use_fallback_data: true' in config.yaml to use sample data.")
-            print(f"Error: {input_path} not found. Using sample data.")
-            df = pd.DataFrame([
-                {"text": "Долго возвращают средства", "sentiment": "negative"},
-                {"text": "Приложение постоянно крашится", "sentiment": "negative"},
-                {"text": "Приложение крашится", "sentiment": "negative"},
-                {"text": "Поддержка работает окей", "sentiment": "neutral"},
-                {"text": "Не связано с продуктом", "sentiment": "negative"}
-            ])
+            df = pd.read_csv(input_path, sep=';', encoding="utf-8", usecols=['text', 'sentiment'])
+        except (UnicodeDecodeError, FileNotFoundError, ValueError) as e:
+            try:
+                df = pd.read_csv(input_path, sep=';', encoding="utf-8-sig", usecols=['text', 'sentiment'])
+            except (UnicodeDecodeError, FileNotFoundError, ValueError):
+                try:
+                    df = pd.read_csv(input_path, sep=';', encoding="cp1252", usecols=['text', 'sentiment'])
+                except FileNotFoundError:
+                    if not use_fallback:
+                        raise FileNotFoundError(
+                            f"{input_path} not found. Set 'use_fallback_data: true' in config.yaml to use sample data.")
+                    print(f"Error: {input_path} not found. Using sample data.")
+                    df = pd.DataFrame([
+                        {"text": "Долго возвращают средства", "sentiment": "negative"},
+                        {"text": "Приложение постоянно крашится", "sentiment": "negative"},
+                        {"text": "Приложение крашится", "sentiment": "negative"},
+                        {"text": "Поддержка работает окей", "sentiment": "neutral"},
+                        {"text": "Не связано с продуктом", "sentiment": "negative"}
+                    ])
+                except ValueError as ve:
+                    raise ValueError(f"CSV must contain 'text' and 'sentiment' columns: {str(ve)}")
 
         # Generate comment IDs and rename columns for database
         df['comment_id'] = df['text'].apply(lambda x: hashlib.sha256(x.encode('utf-8')).hexdigest())
@@ -114,16 +118,18 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
         csv_duplicates = df.duplicated(subset=['comment_id'], keep='first')
         if csv_duplicates.sum() > 0:
             print(f"Removed {csv_duplicates.sum()} duplicate comments within the CSV.")
-            df = df[~csv_duplicates]
+            df = df[~csv_duplicates].copy()
 
         # Remove comments that already exist in the database
         db_duplicates = df['comment_id'].isin(existing_comment_ids)
         if db_duplicates.sum() > 0:
             print(f"Removed {db_duplicates.sum()} comments that already exist in the database.")
-            df = df[~db_duplicates]
+            df = df[~db_duplicates].copy()
 
+        # Apply stopwords removal vectorized
         if remove_stopwords_flag:
-            df['comment'] = df['comment'].apply(lambda x: remove_stopwords(x, language=stopwords_language))
+            df['comment'] = df['comment'].str.split().apply(
+                lambda words: " ".join(word for word in words if word.lower() not in stop_words))
 
         # Generate embeddings once for all comments
         df['embedding_vector'] = df['comment'].apply(embedder.encode)
@@ -136,7 +142,7 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
             irrelevant_count = (~df['is_relevant']).sum()
             if irrelevant_count > 0:
                 print(f"Filtered out {irrelevant_count} irrelevant comments")
-            df = df[df['is_relevant']].drop(columns=['is_relevant'])
+            df = df[df['is_relevant']].drop(columns=['is_relevant']).copy()
         else:
             print("Relevance filtering disabled; keeping all non-duplicate comments")
 
@@ -151,29 +157,8 @@ def preprocess_data(input_path: str = "data/all_reviews.csv", product_descriptio
         df['embedding'] = df['embedding_vector'].apply(pickle.dumps)
         df.drop(columns=['embedding_vector'], inplace=True)
 
-        # Insert preprocessed data into the database
-        # Note: For large datasets, consider batch inserts or df.to_sql with method='multi' for performance.
-        # INSERT OR IGNORE relies on comment_id PRIMARY KEY to skip duplicates.
-        if not df.empty:
-            with sqlite3.connect(db_path) as conn:
-                cursor = conn.cursor()
-                cursor.executemany("""
-                    INSERT OR IGNORE INTO feedback (comment_id, brand, comment, tone, aspect, recommendations, embedding)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, df[['comment_id', 'brand', 'comment', 'tone', 'aspect', 'recommendations',
-                         'embedding']].values.tolist())
-                conn.commit()
-                inserted_count = cursor.rowcount
-                print(f"Inserted {inserted_count} preprocessed reviews into the database at {db_path}")
-        else:
-            print("No new preprocessed reviews to insert into the database.")
-
         return df
 
     except Exception as e:
         print(f"Error during preprocessing: {str(e)}")
         return pd.DataFrame()
-
-
-if __name__ == "__main__":
-    preprocess_data()
