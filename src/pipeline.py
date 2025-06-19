@@ -5,8 +5,8 @@ from src.data.scraper import scrape_data  # Placeholder for scraper module
 from src.data.attachment_processor import process_attachment
 from src.data.database import init_db
 from src.data.preprocess import preprocess_data
-from src.data.populate_db import populate_db
-from src.data.sentiment_generator import generate_sentiments
+from scripts.populate_db import populate_db
+from src.models.sentiment_generator import generate_sentiments
 from src.utils.config import load_config
 
 

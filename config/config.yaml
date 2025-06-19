@@ -4,6 +4,7 @@ models:
   embedder: sentence-transformers/all-MiniLM-L6-v2
   recommender: IlyaGusev/saiga_mistral_7b_lora
   sentiment: ai-forever/sbert_large_nlu_ru  # Set to MODEL_DIR if local
+  aspect: ./aspect-multi-label-model-tiny  # Path to fine-tuned aspect model
   temperature: 0.8
   sentiment_batch_size: 64
   sentiment_device: auto
