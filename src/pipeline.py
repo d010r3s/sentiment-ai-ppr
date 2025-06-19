@@ -5,37 +5,9 @@ from src.data.scraper import scrape_data  # Placeholder for scraper module
 from src.data.attachment_processor import process_attachment
 from src.data.database import init_db
 from src.data.preprocess import preprocess_data
-from scripts.populate_db import populate_db
+from src.data.populate_db import populate_db
+from src.data.sentiment_generator import generate_sentiments
 from src.utils.config import load_config
-
-
-def validate_dataframe(df: pd.DataFrame) -> None:
-    """
-    Validate that a DataFrame has required columns and is not empty.
-    Args:
-        df: DataFrame to validate.
-    Raises:
-        ValueError: If required columns are missing or DataFrame is empty.
-    """
-    required_columns = {'text', 'sentiment'}
-    if not required_columns.issubset(df.columns):
-        missing = required_columns - set(df.columns)
-        raise ValueError(f"DataFrame missing required columns: {missing}")
-    if df.empty:
-        raise ValueError("DataFrame is empty")
-
-
-def generate_sentiments(comments: List[str]) -> List[str]:
-    """
-    Placeholder: Generate sentiments for comments.
-    Args:
-        comments: List of comment texts.
-    Returns:
-        List of sentiments (e.g., 'positive', 'negative', 'neutral').
-    """
-    # TODO: Implement sentiment generation logic (e.g., using a model)
-    print("Generating sentiments (placeholder)...")
-    return ['neutral'] * len(comments)  # Dummy output
 
 
 def generate_aspects(comments: List[str]) -> List[Optional[str]]:
@@ -75,43 +47,42 @@ def run_pipeline(
         init_db(db_path)
         print("Database initialized.")
 
-        # Get input data
-        df = None
+        # Get and preprocess input data
+        preprocessed_df = None
         if use_scraper:
             print("Running scraper...")
             df = scrape_data()  # Assumes scrape_data() returns a DataFrame
-            if df is None:
+            if df is None or df.empty:
                 raise ValueError("Scraper returned no data")
-            validate_dataframe(df)
             print(f"Scraped {len(df)} comments.")
+            print("Preprocessing data...")
+            preprocessed_df = preprocess_data(input_data=df)
         elif attachment is not None:
             print("Processing user-uploaded attachment...")
             if isinstance(attachment, pd.DataFrame):
                 df = attachment
-                validate_dataframe(df)
             else:
                 df = process_attachment(attachment)
-                validate_dataframe(df)
+            if df.empty:
+                raise ValueError("Attachment processing returned no data")
             print(f"Processed {len(df)} comments from attachment.")
+            print("Preprocessing data...")
+            preprocessed_df = preprocess_data(input_data=df)
         elif input_path:
             print(f"Using input CSV: {input_path}")
-            df = preprocess_data(input_path)  # Let preprocess_data handle CSV loading
-            validate_dataframe(df)
-            print(f"Loaded {len(df)} comments from CSV.")
+            print("Preprocessing data...")
+            preprocessed_df = preprocess_data(input_path)
         else:
             print(f"Using default input CSV: {default_input_path}")
-            df = preprocess_data(default_input_path)
-            validate_dataframe(df)
-            print(f"Loaded {len(df)} comments from default CSV.")
+            print("Preprocessing data...")
+            preprocessed_df = preprocess_data(default_input_path)
 
-        # Preprocess and insert comments
-        print("Preprocessing data...")
-        preprocessed_df = preprocess_data(input_data=df)
         if preprocessed_df.empty:
             print("No preprocessed data to insert. Exiting.")
             return
         print(f"Preprocessed {len(preprocessed_df)} comments.")
 
+        # Insert comments into database
         print("Inserting comments into database...")
         populate_db(input_data=preprocessed_df, generate_recommendations=False)
         print("Comments inserted successfully.")
@@ -136,7 +107,8 @@ def run_pipeline(
                         WHERE comment_id = ?
                     """, list(zip(sentiments, sentiments_df['comment_id'])))
                     conn.commit()
-                    print(f"Updated {len(sentiments_df)} comments with sentiments.")
+                    updated_count = len(sentiments_df)
+                    print(f"Updated {updated_count} comments with sentiments.")
 
         # Generate and update aspects
         if use_aspect_generation:
@@ -158,7 +130,8 @@ def run_pipeline(
                         WHERE comment_id = ?
                     """, list(zip(aspects, aspects_df['comment_id'])))
                     conn.commit()
-                    print(f"Updated {len(aspects_df)} comments with aspects.")
+                    updated_count = len(aspects_df)
+                    print(f"Updated {updated_count} comments with aspects.")
 
         print("Pipeline completed successfully.")
 
