@@ -5,12 +5,7 @@ import sqlite3
 from src.data.database import init_db
 from src.rag.retriever import Retriever
 from src.models.recommender import Recommender
-import yaml
-
-
-def load_config(config_path="config/config.yaml"):
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
+from src.utils.config import load_config
 
 
 def main():

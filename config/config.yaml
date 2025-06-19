@@ -3,6 +3,7 @@ database:
 models:
   embedder: sentence-transformers/all-MiniLM-L6-v2
   recommender: IlyaGusev/saiga_mistral_7b_lora
+  temperature: 0.8
 rag:
   top_k: 5
   similarity_threshold: 0.8
