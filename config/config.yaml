@@ -10,9 +10,12 @@ rag:
 processing:
   include_neutral: false
   use_fallback_data: true
-  product_description: "SaaS tool for managing customer feedback" # company/product description
+  product_description: "Your product description here" # company/product description
   use_relevance_filter: true
   relevance_threshold: 0.5
   remove_stopwords: false
   stopwords_language: russian
   default_brand: ППР
+  use_sentiment_generation: false
+  use_aspect_generation: false
+  input_path: "data/all_reviews.csv"
