@@ -9,3 +9,8 @@ rag:
   similarity_threshold: 0.8
 processing:
   include_neutral: false
+  use_fallback_data: true
+  product_description: "SaaS tool for managing customer feedback"
+  use_relevance_filter: true
+  relevance_threshold: 0.5
+  remove_stopwords: false
