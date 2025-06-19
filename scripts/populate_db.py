@@ -1,7 +1,7 @@
 import pandas as pd
 import sqlite3
 import re
-from typing import Optional
+from typing import Optional, Union
 
 from src.models.recommender import Recommender
 from src.data.database import init_db
@@ -26,11 +26,13 @@ def is_valid_recommendation(rec: Optional[str]) -> bool:
     return bool(re.match(pattern, rec, re.MULTILINE)) and 4 <= len(rec.split("\n")) <= 6
 
 
-def populate_db(input_path: str = "data/all_reviews.csv"):
+def populate_db(input_data: Union[str, pd.DataFrame] = "data/all_reviews.csv", generate_recommendations: bool = False):
     """
-    Preprocess reviews, generate recommendations, and populate the feedback table in the database.
+    Preprocess reviews and populate the feedback table in the database.
+    Optionally generate recommendations.
     Args:
-        input_path: Path to input CSV (from scraper.py).
+        input_data: Path to input CSV or preprocessed DataFrame.
+        generate_recommendations: If True, generate and insert recommendations.
     """
     try:
         config = load_config()
@@ -40,8 +42,8 @@ def populate_db(input_path: str = "data/all_reviews.csv"):
         # Initialize database
         init_db(db_path)
 
-        # Preprocess data
-        df = preprocess_data(input_path=input_path)
+        # Preprocess data if input is a CSV path
+        df = preprocess_data(input_data) if isinstance(input_data, str) else input_data
         if df.empty:
             print("No preprocessed data to process. Exiting.")
             return
@@ -56,6 +58,10 @@ def populate_db(input_path: str = "data/all_reviews.csv"):
             conn.commit()
             inserted_count = cursor.rowcount  # Note: rowcount may be inaccurate for executemany in SQLite
             print(f"Inserted approximately {inserted_count} preprocessed reviews into the database at {db_path}")
+
+        if not generate_recommendations:
+            print("Recommendation generation disabled. Database populated with preprocessed data.")
+            return
 
         # Query comments without recommendations
         with sqlite3.connect(db_path) as conn:
@@ -99,7 +105,3 @@ def populate_db(input_path: str = "data/all_reviews.csv"):
 
     except Exception as e:
         print(f"Error during database population: {str(e)}")
-
-
-if __name__ == "__main__":
-    populate_db()
