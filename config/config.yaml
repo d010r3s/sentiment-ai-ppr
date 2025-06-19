@@ -3,19 +3,22 @@ database:
 models:
   embedder: sentence-transformers/all-MiniLM-L6-v2
   recommender: IlyaGusev/saiga_mistral_7b_lora
+  sentiment: ai-forever/sbert_large_nlu_ru  # Fallback if MODEL_DIR not provided
   temperature: 0.8
+  sentiment_batch_size: 64
+  sentiment_device: auto  # Options: auto, cpu, cuda
 rag:
   top_k: 5
   similarity_threshold: 0.8
 processing:
-  include_neutral: false
+  include_neutral: false  # control whether neutral sentiments are used for generating recommendations
   use_fallback_data: true
-  product_description: "Your product description here" # company/product description
+  product_description: "Your product description here"
   use_relevance_filter: true
   relevance_threshold: 0.5
   remove_stopwords: false
   stopwords_language: russian
   default_brand: ППР
-  use_sentiment_generation: false
+  use_sentiment_generation: true  # Enable sentiment generation
   use_aspect_generation: false
   input_path: "data/all_reviews.csv"
