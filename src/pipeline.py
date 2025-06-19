@@ -32,7 +32,7 @@ def main():
     # Process comments
     retriever = Retriever()
     recommender = Recommender(model_id=config["models"]["recommender"], retriever=retriever)
-    recommendations = recommender.generate_batch(comment_list)
+    recommendations = recommender.generate_batch(comment_list)  # batch_size=8 by default
 
     # Update database
     conn = sqlite3.connect(db_path)

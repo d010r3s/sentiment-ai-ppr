@@ -1,5 +1,6 @@
 import pandas as pd
 import hashlib
+import sqlite3
 from sklearn.metrics.pairwise import cosine_similarity
 from src.models.embedder import Embedder
 from src.utils.config import load_config
@@ -46,8 +47,8 @@ def remove_stopwords(text, language="russian"):
 def preprocess_data(input_path="data/all_reviews.csv", output_path="data/preprocessed_reviews.csv",
                     product_description=None, relevance_threshold=None):
     """
-    Preprocess reviews: remove duplicates, optionally filter relevant feedback, optionally remove stopwords, optionally
-    use fallback data.
+    Preprocess reviews: remove duplicates (from CSV and database), optionally filter relevant feedback,
+    optionally remove stopwords, optionally use fallback data.
     Args:
         input_path (str): Path to input CSV (from scraper.py).
         output_path (str): Path to save preprocessed CSV.
@@ -62,10 +63,22 @@ def preprocess_data(input_path="data/all_reviews.csv", output_path="data/preproc
     remove_stopwords_flag = config["processing"]["remove_stopwords"]
     product_description = product_description or config["processing"]["product_description"]
     relevance_threshold = relevance_threshold or config["processing"]["relevance_threshold"]
+    db_path = config["database"]["path"]
     embedder = Embedder()
 
+    # Load existing comment IDs from the database
+    existing_comment_ids = set()
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT comment_id FROM feedback")
+        existing_comment_ids = {row[0] for row in cursor.fetchall()}
+        conn.close()
+        print(f"Found {len(existing_comment_ids)} existing comments in the database.")
+    except sqlite3.OperationalError:
+        print("Database table 'feedback' not found. No existing comments to check for duplicates.")
+
     # Load input CSV, validate 'text' and 'sentiment' columns, or use fallback
-    # sample data if file is missing and use_fallback_data is true
     try:
         df = pd.read_csv(input_path, sep=';', encoding="cp1252")
         if not {'text', 'sentiment'}.issubset(df.columns):
@@ -83,11 +96,20 @@ def preprocess_data(input_path="data/all_reviews.csv", output_path="data/preproc
             {"text": "Не связано с продуктом", "sentiment": "negative"}
         ])
 
+    # Generate comment IDs
     df['comment_id'] = df['text'].apply(lambda x: hashlib.sha256(x.encode('utf-8')).hexdigest())
-    duplicates = df.duplicated(subset=['comment_id'], keep='first')
-    if duplicates.sum() > 0:
-        print(f"Removed {duplicates.sum()} duplicate comments")
-        df = df[~duplicates]
+
+    # Remove duplicates within the CSV
+    csv_duplicates = df.duplicated(subset=['comment_id'], keep='first')
+    if csv_duplicates.sum() > 0:
+        print(f"Removed {csv_duplicates.sum()} duplicate comments within the CSV.")
+        df = df[~csv_duplicates]
+
+    # Remove comments that already exist in the database
+    db_duplicates = df['comment_id'].isin(existing_comment_ids)
+    if db_duplicates.sum() > 0:
+        print(f"Removed {db_duplicates.sum()} comments that already exist in the database.")
+        df = df[~db_duplicates]
 
     if remove_stopwords_flag:
         df['text'] = df['text'].apply(lambda x: remove_stopwords(x, language="russian"))
