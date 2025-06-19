@@ -11,7 +11,7 @@ from src.utils.config import load_config
 def main():
     config = load_config()
     db_path = config["database"]["path"]
-    process_neutral = config.get("processing", {}).get("include_neutral", False)
+    process_neutral = config["processing"]["include_neutral"]
 
     # Initialize database
     init_db(db_path)
