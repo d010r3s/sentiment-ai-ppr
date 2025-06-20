@@ -1,4 +1,4 @@
-BOT_TOKEN = 'BOT_TOKEN'
+BOT_TOKEN = 'YOUR_BOT_TOKEN'
 
 import asyncio
 import logging
@@ -58,22 +58,7 @@ class AnalysisStates(StatesGroup):
     viewing_overall    = State()
     viewing_aspect     = State()
 
-# === Клавиатуры ===
-main_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Проанализировать отзывы", callback_data="analyze_reviews")]
-])
-company_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Моя компания", callback_data="my_company")],
-    [InlineKeyboardButton(text="Конкурент",   callback_data="competitor")],
-    [InlineKeyboardButton(text="Выйти",       callback_data="exit")]
-])
-aspect_buttons = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text=asp.capitalize(), callback_data=f"aspect_{i}")]
-    for i, asp in enumerate(ASPECT_LABELS)
-] + [[InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_main")]])
-sentiment_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="⬅️ Назад к аспектам", callback_data="my_company")]
-])
+
 
 # === Загрузка данных ===
 try:
@@ -96,6 +81,56 @@ try:
 except Exception as e:
     print(f"[!] Ошибка при загрузке данных: {e}")
     exit(1)
+
+
+
+# === Клавиатуры ===
+main_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Проанализировать отзывы", callback_data="analyze_reviews")]
+])
+company_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Моя компания", callback_data="my_company")],
+    [InlineKeyboardButton(text="Конкурент",   callback_data="competitor")],
+    [InlineKeyboardButton(text="Выйти",       callback_data="exit")]
+])
+
+def chunk_list(lst, chunk_size=2):
+    # разбивает список на подсписки по 2 элемента (для инлайн-клавиатуры aspect_buttons)
+    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
+
+# === Подсчёт частоты аспектов и их суммы ===
+try:
+    labeled_reviews = pd.read_csv("datasets/labeled_reviews.csv", sep=",", encoding="utf-8")
+    aspect_frequencies = labeled_reviews[ASPECT_LABELS].sum().to_dict()
+    
+    # Общее число упоминаний всех аспектов
+    total_mentions = sum(aspect_frequencies.values())
+    
+except Exception as e:
+    print(f"[!] Ошибка при подсчёте частоты аспектов: {e}")
+    aspect_frequencies = {a: 0 for a in ASPECT_LABELS}
+    total_mentions = 1  # избегаем деления на 0
+
+
+# === Генерация клавиатуры аспектов с процентами ===
+_aspect_buttons_rows = []
+for chunk in chunk_list(ASPECT_LABELS):
+    row = []
+    for i, item in enumerate(chunk):
+        freq = aspect_frequencies.get(item, 0)
+        percent = (freq / total_mentions) * 100
+        text = f"{item.capitalize()} — {percent:.1f}%"
+        row.append(
+            InlineKeyboardButton(text=text, callback_data=f"aspect_{i}")
+        )
+    _aspect_buttons_rows.append(row)
+
+_aspect_buttons_rows.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_main")])
+
+aspect_buttons = InlineKeyboardMarkup(inline_keyboard=_aspect_buttons_rows)
+
+
+
 
 # === Настройка роутера ===
 router = Router()

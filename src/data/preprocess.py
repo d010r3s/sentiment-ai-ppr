@@ -57,9 +57,10 @@ def preprocess_data(input_data: Union[str, pd.DataFrame] = "data/all_reviews.csv
         use_fallback = config["processing"]["use_fallback_data"]
         use_relevance_filter = config["processing"]["use_relevance_filter"]
         remove_stopwords_flag = config["processing"]["remove_stopwords"]
-        stopwords_language = config["processing"].get("stopwords_language", "russian")
+        stopwords_language = config["processing"]["stopwords_language"]
         db_path = config["database"]["path"]
-        default_brand = config["processing"].get("default_brand", "PPR")
+        default_brand = config["processing"]["default_brand"]
+        competitor_brand = config["processing"]["competitor_brand"]
 
         if product_description is None:
             product_description = config["processing"]["product_description"]
@@ -87,34 +88,49 @@ def preprocess_data(input_data: Union[str, pd.DataFrame] = "data/all_reviews.csv
             except sqlite3.OperationalError:
                 print("Database table 'feedback' not found. No existing comments to check for duplicates.")
 
-        # Load input data
         if isinstance(input_data, pd.DataFrame):
             df = input_data.copy()
-            if not {'text', 'sentiment'}.issubset(df.columns):
-                raise ValueError("DataFrame must contain 'text' and 'sentiment' columns")
         else:
+            import chardet
+            with open(input_data, "rb") as f:
+                rawdata = f.read(10000)
+                result = chardet.detect(rawdata)
+                detected_encoding = result['encoding']
+                print(f"Detected encoding: {detected_encoding}")
+
             try:
-                df = pd.read_csv(input_data, sep=';', encoding="utf-8", usecols=['text', 'sentiment'])
-            except (UnicodeDecodeError, FileNotFoundError, ValueError) as e:
-                try:
-                    df = pd.read_csv(input_data, sep=';', encoding="utf-8-sig", usecols=['text', 'sentiment'])
-                except (UnicodeDecodeError, FileNotFoundError, ValueError):
-                    try:
-                        df = pd.read_csv(input_data, sep=';', encoding="cp1252", usecols=['text', 'sentiment'])
-                    except FileNotFoundError:
-                        if not use_fallback:
-                            raise FileNotFoundError(
-                                f"{input_data} not found. Set 'use_fallback_data: true' in config.yaml to use sample data.")
-                        print(f"Error: {input_data} not found. Using sample data.")
-                        df = pd.DataFrame([
-                            {"text": "Долго возвращают средства", "sentiment": "negative"},
-                            {"text": "Приложение постоянно крашится", "sentiment": "negative"},
-                            {"text": "Приложение крашится", "sentiment": "negative"},
-                            {"text": "Поддержка работает окей", "sentiment": "neutral"},
-                            {"text": "Не связано с продуктом", "sentiment": "negative"}
-                        ])
-                    except ValueError as ve:
-                        raise ValueError(f"CSV must contain 'text' and 'sentiment' columns: {str(ve)}")
+                df = pd.read_csv(input_data, sep=';', encoding=detected_encoding, usecols=['text', 'sentiment', 'rating'])
+            except Exception as e:
+                print(f"Failed to read CSV with detected encoding {detected_encoding}: {e}")
+                df = pd.read_csv(input_data, sep=';', encoding="utf-8", usecols=['text', 'sentiment', 'rating'])
+        # Load input data
+        # if isinstance(input_data, pd.DataFrame):
+        #     df = input_data.copy()
+        #     if not {'text', 'sentiment'}.issubset(df.columns):
+        #         raise ValueError("DataFrame must contain 'text' and 'sentiment' columns")
+        # else:
+        #     try:
+        #         df = pd.read_csv(input_data, sep=';', encoding="utf-8", usecols=['text', 'sentiment'])
+        #     except (UnicodeDecodeError, FileNotFoundError, ValueError) as e:
+        #         try:
+        #             df = pd.read_csv(input_data, sep=';', encoding="utf-8-sig", usecols=['text', 'sentiment'])
+        #         except (UnicodeDecodeError, FileNotFoundError, ValueError):
+        #             try:
+        #                 df = pd.read_csv(input_data, sep=';', encoding="cp1252", usecols=['text', 'sentiment'])
+        #             except FileNotFoundError:
+        #                 if not use_fallback:
+        #                     raise FileNotFoundError(
+        #                         f"{input_data} not found. Set 'use_fallback_data: true' in config.yaml to use sample data.")
+        #                 print(f"Error: {input_data} not found. Using sample data.")
+        #                 df = pd.DataFrame([
+        #                     {"text": "Долго возвращают средства", "sentiment": "negative"},
+        #                     {"text": "Приложение постоянно крашится", "sentiment": "negative"},
+        #                     {"text": "Приложение крашится", "sentiment": "negative"},
+        #                     {"text": "Поддержка работает окей", "sentiment": "neutral"},
+        #                     {"text": "Не связано с продуктом", "sentiment": "negative"}
+        #                 ])
+        #             except ValueError as ve:
+        #                 raise ValueError(f"CSV must contain 'text' and 'sentiment' columns: {str(ve)}")
 
         # Generate comment IDs and rename columns for database
         df['comment_id'] = df['text'].apply(lambda x: hashlib.sha256(x.encode('utf-8')).hexdigest())
@@ -155,8 +171,15 @@ def preprocess_data(input_data: Union[str, pd.DataFrame] = "data/all_reviews.csv
         # Log total comments after filtering
         print(f"Total comments after filtering: {len(df)}")
 
+        if 'rating' not in df.columns:
+            print("Warning: 'rating' column not found in input. Filling with default value 0.")
+            df['rating'] = 0
+
         # Add columns required for the feedback table
-        df['brand'] = default_brand
+        if config["processing"]["allow_competitors"]:
+            df['brand'] = competitor_brand
+        else:
+            df['brand'] = default_brand
         df['aspect'] = None
         df['recommendations'] = None
         # Pickle embeddings for database insertion

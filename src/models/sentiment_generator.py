@@ -26,7 +26,8 @@ class SentimentAnalyzer:
             print(f"Error initializing SentimentAnalyzer: {str(e)}")
             raise
 
-    def _set_device(self, device: str) -> str:
+    @staticmethod
+    def _set_device(device: str) -> str:
         """
         Set device for model inference.
         Args:

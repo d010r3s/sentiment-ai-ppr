@@ -20,6 +20,7 @@ def init_db(db_path: Optional[str] = None) -> None:
                 brand TEXT,
                 comment TEXT,
                 tone TEXT,
+                rating INTEGER,
                 embedding BLOB,
                 recommendations TEXT,
                 aspect TEXT

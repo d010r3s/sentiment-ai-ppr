@@ -52,9 +52,10 @@ def populate_db(input_data: Union[str, pd.DataFrame] = "data/all_reviews.csv", g
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.executemany("""
-                INSERT OR IGNORE INTO feedback (comment_id, brand, comment, tone, embedding, recommendations, aspect)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, df[['comment_id', 'brand', 'comment', 'tone', 'embedding', 'recommendations', 'aspect']].values.tolist())
+                INSERT OR IGNORE INTO feedback (comment_id, brand, comment, tone, rating, embedding, recommendations, aspect)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, df[['comment_id', 'brand', 'comment', 'tone', 'rating', 'embedding', 'recommendations',
+                     'aspect']].values.tolist())
             conn.commit()
             inserted_count = cursor.rowcount  # Note: rowcount may be inaccurate for executemany in SQLite
             print(f"Inserted approximately {inserted_count} preprocessed reviews into the database at {db_path}")

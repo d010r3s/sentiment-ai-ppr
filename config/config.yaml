@@ -2,12 +2,24 @@ database:
   path: data/feedback.db
 models:
   embedder: sentence-transformers/all-MiniLM-L6-v2
-  recommender: IlyaGusev/saiga_mistral_7b_lora
+  use_recommender: false
+  recommender:
+    model_id: IlyaGusev/saiga_mistral_7b_lora
+    temperature: 0.7  # More deterministic output
+    top_p: 0.85
+    repetition_penalty: 1.2
+    max_new_tokens: 300  # Slightly longer responses
+    no_repeat_ngram_size: 3
+    do_sample: true  # makes the model more creative, prevents same outputs generation
+
   sentiment: ai-forever/sbert_large_nlu_ru  # Set to MODEL_DIR if local
-  aspect: ./aspect-multi-label-model-tiny  # Path to fine-tuned aspect model
-  temperature: 0.8
   sentiment_batch_size: 64
   sentiment_device: auto
+
+  aspect: "src/models/aspect_model"  # or Hugging Face model ID if downloading
+  aspect_batch_size: 16
+  aspect_device: auto
+  aspect_threshold: 0.5
 rag:
   top_k: 5
   similarity_threshold: 0.8
@@ -19,12 +31,19 @@ processing:
   relevance_threshold: 0.5
   remove_stopwords: false
   stopwords_language: russian
-  default_brand: ППР
+  default_brand: 'ППР'
+  competitor_brand: "competitor brand"
+  allow_competitors: true
   use_sentiment_generation: true
-  use_aspect_generation: false
+  use_aspect_generation: true
   input_path: "data/all_reviews.csv"
+  competitor_path: "data/all_rev_sent.csv"
+
 scraper:
   yandex_place_id: "YOUR_YANDEX_PLACE_ID"  # Replace with your place ID, e.g., peredovyye_platezhnyye_resheniya/103262022758
   2gis_business_id: "4504127916787967"  # Replace with your business ID
   2gis_api_key: "YOUR_2GIS_API_KEY"  # Replace with your API key
   chromedriver_path: null  # Set to path of pre-installed ChromeDriver, e.g., /usr/bin/chromedriver
+
+bot:
+  BOT_TOKEN: '8026318516:AAEzmVQrPKv1n_7QZJgZBHt659avmOJg1AQ'

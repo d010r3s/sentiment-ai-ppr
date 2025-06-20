@@ -39,6 +39,25 @@ def process_attachment(file: Union[str, bytes, StringIO], encoding: Optional[str
         if not {'text', 'sentiment'}.issubset(df.columns):
             raise ValueError("CSV must contain 'text' and 'sentiment' columns")
 
+        # Safely parse 'aspect' column if it exists (avoid float iteration error)
+        if 'aspect' in df.columns:
+            from ast import literal_eval
+
+            def safe_eval(x):
+                import pandas as pd
+                if pd.isna(x):
+                    return []
+                if isinstance(x, str) and x.strip().startswith('['):
+                    try:
+                        return literal_eval(x)
+                    except:
+                        return []
+                return []
+
+            df['parsed_aspects'] = df['aspect'].apply(safe_eval)
+        else:
+            df['parsed_aspects'] = [[] for _ in range(len(df))]
+
         return df
 
     except Exception as e:
